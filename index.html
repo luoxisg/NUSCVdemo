@@ -1,553 +1,607 @@
-﻿import React, { useState, useEffect } from 'react';
-import { 
- Activity, 
- Server, 
- Droplets, 
- Wind, 
- Zap, 
- AlertTriangle, 
- CheckCircle, 
- Layers, 
- Menu, 
- Search, 
- Bell, 
- Settings, 
- Maximize2,
- ChevronDown,
- Eye,
- RefreshCw,
- Cpu,
- Thermometer,
- Box,
- BatteryCharging,
- Disc, // For Flywheel representation
- ZapOff // For Voltage Sag
-} from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ReferenceLine } from 'recharts';
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NUS Tropical DC Zero-touch 2.0</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 1. React & ReactDOM (Locked to 18.2.0 for stability) -->
+    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    
+    <!-- 2. Prop-types (CRITICAL: Required for Recharts UMD to work) -->
+    <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
 
-// --- NUS Brand Colors ---
-const NUS_BLUE = '#003D7C';
-const NUS_ORANGE = '#EF7C00';
-const NUS_GREY = '#F5F6F8';
+    <!-- 3. Recharts (Locked to 2.12.7 to match React 18) -->
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+    
+    <!-- 4. Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-// --- Mock Data Generators ---
+    <!-- 5. Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
 
-const generateCoolingData = () => {
- const data = [];
- for (let i = 0; i < 20; i++) {
-   data.push({
-     time: `T-${20-i}s`,
-     voidFraction: 0.3 + Math.random() * 0.2, // 气泡覆盖率
-     burnoutProb: Math.random() * 0.15, // 烧机概率
-     limit: 0.8
-   });
- }
- return data;
-};
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+        .animate-spin-slow { animation: spin 8s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        
+        /* Custom Scrollbar for Logs */
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-[#F5F6F8] text-gray-800 h-screen overflow-hidden">
+    <div id="root" class="h-full"></div>
 
-const generateSSTData = () => {
- const data = [];
- for (let i = 0; i < 15; i++) {
-   data.push({
-     time: i,
-     thd: 1.5 + Math.random() * 0.5, // Total Harmonic Distortion usually low
-     voltage: 230 + (Math.random() * 2 - 1)
-   });
- }
- return data;
-};
+    <script type="text/babel">
+        // Ensure globals are available
+        const { useState, useEffect, useRef } = React;
+        // Access Recharts from global window object
+        const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip: RechartsTooltip, ResponsiveContainer, AreaChart, Area } = window.Recharts;
 
-const SystemStatusBadge = ({ status }) => {
- const colors = {
-   active: "bg-green-100 text-green-700 border-green-200",
-   warning: "bg-orange-100 text-[#EF7C00] border-orange-200",
-   critical: "bg-red-100 text-red-700 border-red-200",
-   offline: "bg-gray-100 text-gray-500 border-gray-200",
-   charging: "bg-blue-100 text-blue-700 border-blue-200"
- };
- 
- return (
-   <span className={`px-2 py-0.5 rounded text-xs font-semibold border ${colors[status] || colors.offline} uppercase tracking-wide`}>
-     {status}
-   </span>
- );
-};
+        // --- Icon Helper Component (FIXED) ---
+        // Uses lucide.createIcons instead of toSvg to be compatible with latest CDN version
+        const Icon = ({ name, size = 18, className = "" }) => {
+            const iconRef = useRef(null);
+            
+            useEffect(() => {
+                if (iconRef.current && window.lucide && window.lucide.createIcons) {
+                    // Create a temporary i tag that Lucide will replace
+                    const iTag = document.createElement('i');
+                    iTag.setAttribute('data-lucide', name);
+                    
+                    // Clear the container and append the new tag
+                    iconRef.current.innerHTML = '';
+                    iconRef.current.appendChild(iTag);
+                    
+                    // Ask Lucide to transform the tag inside our container
+                    window.lucide.createIcons({
+                        root: iconRef.current,
+                        nameAttr: 'data-lucide',
+                        attrs: {
+                            width: size,
+                            height: size,
+                            class: className
+                        }
+                    });
+                }
+            }, [name, size, className]);
 
-export default function App() {
- const [activeTab, setActiveTab] = useState('overview');
- const [isSidebarOpen, setSidebarOpen] = useState(true);
- 
- // Real-time Data States
- const [coolingData, setCoolingData] = useState(generateCoolingData());
- const [sstData, setSstData] = useState(generateSSTData());
- const [currentTime, setCurrentTime] = useState(new Date());
- 
- // Flywheel Simulation
- const [flywheelRPM, setFlywheelRPM] = useState(45000);
+            return <span ref={iconRef} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}></span>;
+        };
 
- // Simulation effect for live data
- useEffect(() => {
-   const interval = setInterval(() => {
-     // Update Cooling
-     setCoolingData(prev => {
-       const newData = [...prev.slice(1), {
-         time: 'Now',
-         voidFraction: 0.3 + Math.random() * 0.25,
-         burnoutProb: Math.random() * 0.2,
-         limit: 0.8
-       }];
-       return newData;
-     });
+        // --- Constants & Helpers ---
+        const NUS_BLUE = '#003D7C';
+        const NUS_ORANGE = '#EF7C00';
 
-     // Update SST THD
-     setSstData(prev => {
-        const newData = [...prev.slice(1), {
-            time: prev[prev.length-1].time + 1,
-            thd: 1.5 + Math.random() * 0.8,
-            voltage: 230 + (Math.random() * 1.5 - 0.75)
-        }];
-        return newData;
-     });
+        const getTimeLabel = (offsetSeconds = 0) => {
+            const d = new Date();
+            d.setSeconds(d.getSeconds() - offsetSeconds);
+            return d.toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        };
 
-     // Update Flywheel RPM (micro fluctuations)
-     setFlywheelRPM(45000 + Math.floor(Math.random() * 50 - 25));
+        // --- Sub-Module Components ---
 
-     setCurrentTime(new Date());
-   }, 1000);
-   return () => clearInterval(interval);
- }, []);
-
- // --- Components ---
-
- const SidebarItem = ({ id, icon: Icon, label, alert }) => (
-   <button 
-     onClick={() => setActiveTab(id)}
-     className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors border-r-4
-       ${activeTab === id 
-         ? `bg-blue-50 text-[${NUS_BLUE}] border-[${NUS_ORANGE}]` 
-         : 'text-gray-500 border-transparent hover:bg-gray-50 hover:text-gray-700'}
-     `}
-   >
-     <Icon size={18} />
-     {isSidebarOpen && <span>{label}</span>}
-     {isSidebarOpen && alert && <div className="ml-auto w-2 h-2 bg-[#EF7C00] rounded-full animate-pulse" />}
-   </button>
- );
-
- const StatCard = ({ title, value, unit, trend, icon: Icon, status = "neutral" }) => (
-   <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-     <div className="flex justify-between items-start mb-2">
-       <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">{title}</h3>
-       <Icon size={16} className={status === "critical" ? "text-red-500" : "text-gray-400"} />
-     </div>
-     <div className="flex items-end gap-2">
-       <span className="text-2xl font-bold text-[#003D7C]">{value}</span>
-       <span className="text-xs text-gray-500 mb-1">{unit}</span>
-     </div>
-     {trend && (
-       <div className={`text-xs mt-2 flex items-center ${trend.includes('+') ? 'text-red-500' : 'text-green-500'}`}>
-         {trend.includes('+') ? '▲' : '▼'} {trend} vs baseline
-       </div>
-     )}
-   </div>
- );
-
- // --- Main Views ---
-
- const OverviewDashboard = () => (
-   <div className="space-y-6 animate-in fade-in duration-500">
-     {/* KPI Row */}
-     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-       <StatCard title="Real-time PUE" value="1.18" unit="" trend="-0.02" icon={Zap} />
-       <StatCard title="Load Density" value="48.2" unit="kW/Rack" trend="+1.2%" icon={Thermometer} />
-       <StatCard title="CV Latency" value="18" unit="ms" trend="-2ms" icon={Activity} />
-       <StatCard title="Energy Resilience" value="100" unit="%" icon={BatteryCharging} status="good" />
-     </div>
-
-     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-       {/* Main Visualization: Liquid Cooling Safety */}
-       <div className="lg:col-span-2 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-         <div className="flex justify-between items-center mb-6">
-           <div>
-             <h2 className="text-lg font-bold text-[#003D7C] flex items-center gap-2">
-               <Droplets size={20} className="text-[#EF7C00]"/> 
-               Liquid Cooling Safety Barrier
-             </h2>
-             <p className="text-xs text-gray-500 mt-1">Real-time Boiling Regime & Burnout Probability (CHF)</p>
-           </div>
-           <SystemStatusBadge status="active" />
-         </div>
-         
-         <div className="h-64 w-full">
-           <ResponsiveContainer width="100%" height="100%">
-             <AreaChart data={coolingData}>
-               <defs>
-                 <linearGradient id="colorVoid" x1="0" y1="0" x2="0" y2="1">
-                   <stop offset="5%" stopColor="#003D7C" stopOpacity={0.1}/>
-                   <stop offset="95%" stopColor="#003D7C" stopOpacity={0}/>
-                 </linearGradient>
-                 <linearGradient id="colorBurn" x1="0" y1="0" x2="0" y2="1">
-                   <stop offset="5%" stopColor="#EF7C00" stopOpacity={0.1}/>
-                   <stop offset="95%" stopColor="#EF7C00" stopOpacity={0}/>
-                 </linearGradient>
-               </defs>
-               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-               <XAxis dataKey="time" tick={{fontSize: 10}} stroke="#9ca3af" />
-               <YAxis tick={{fontSize: 10}} stroke="#9ca3af" />
-               <RechartsTooltip 
-                 contentStyle={{border: 'none', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
-               />
-               <Area type="monotone" dataKey="voidFraction" name="Void Fraction" stroke="#003D7C" fillOpacity={1} fill="url(#colorVoid)" strokeWidth={2} />
-               <Area type="monotone" dataKey="burnoutProb" name="Burnout Prob" stroke="#EF7C00" fillOpacity={1} fill="url(#colorBurn)" strokeWidth={2} />
-               <Line type="monotone" dataKey="limit" name="Limit" stroke="#FF0000" strokeDasharray="5 5" strokeWidth={1} dot={false} />
-             </AreaChart>
-           </ResponsiveContainer>
-         </div>
-       </div>
-
-       {/* NUS Engine Integration Status */}
-       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-0 overflow-hidden flex flex-col">
-         <div className="p-4 border-b border-gray-100 bg-gray-50">
-           <h2 className="text-sm font-bold text-[#003D7C] uppercase tracking-wide">Cognitive Digital Twin API</h2>
-         </div>
-         
-         <div className="flex-1 p-4 space-y-4">
-            <div className="flex items-center justify-between">
-               <div className="flex items-center gap-3">
-                 <div className="p-2 bg-blue-50 rounded text-[#003D7C]"><Wind size={16}/></div>
-                 <div>
-                   <div className="text-sm font-semibold">CFD Engine</div>
-                   <div className="text-[10px] text-gray-500">Geometry Sync</div>
-                 </div>
-               </div>
-               <div className="text-xs font-bold text-green-600 flex items-center gap-1"><CheckCircle size={10}/> Synced</div>
-            </div>
-
-            <div className="flex items-center justify-between">
-               <div className="flex items-center gap-3">
-                 <div className="p-2 bg-orange-50 text-[#EF7C00]"><Cpu size={16}/></div>
-                 <div>
-                   <div className="text-sm font-semibold">AI Control Engine</div>
-                   <div className="text-[10px] text-gray-500">Telemetry (MQTT)</div>
-                 </div>
-               </div>
-               <div className="text-xs font-bold text-green-600 flex items-center gap-1"><Activity size={10}/> Active</div>
-            </div>
-
-            <div className="flex items-center justify-between">
-               <div className="flex items-center gap-3">
-                 <div className="p-2 bg-green-50 text-green-600"><Zap size={16}/></div>
-                 <div>
-                   <div className="text-sm font-semibold">Energy Engine</div>
-                   <div className="text-[10px] text-gray-500">Grid Optimization</div>
-                 </div>
-               </div>
-               <div className="text-xs font-bold text-green-600 flex items-center gap-1"><CheckCircle size={10}/> Nominal</div>
-            </div>
-         </div>
-       </div>
-     </div>
-
-     {/* --- MIDDLE SECTION: SST & Flywheel (Added as requested) --- */}
-     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-       
-       {/* SST Panel */}
-       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 relative overflow-hidden">
-         <div className="absolute top-0 right-0 p-4 opacity-10">
-            <Zap size={120} />
-         </div>
-         <div className="flex justify-between items-center mb-4 relative z-10">
-           <h2 className="text-md font-bold text-[#003D7C] flex items-center gap-2">
-             <Zap size={18} className="text-[#EF7C00]"/> 
-             HHE Solid State Transformer (SST)
-           </h2>
-           <SystemStatusBadge status="active" />
-         </div>
-         
-         <div className="grid grid-cols-2 gap-4 relative z-10">
-            <div className="space-y-4">
-              <div className="p-3 bg-gray-50 rounded border border-gray-100">
-                 <div className="text-xs text-gray-500 mb-1">Grid Stability (THD)</div>
-                 <div className="flex items-end gap-2">
-                   <span className="text-2xl font-bold text-[#003D7C]">{sstData[sstData.length-1]?.thd.toFixed(2)}%</span>
-                   <span className="text-[10px] text-green-600 mb-1">Excellent (<5%)</span>
-                 </div>
-                 <div className="h-10 mt-2">
-                    <ResponsiveContainer width="100%" height="100%">
-                       <LineChart data={sstData}>
-                          <Line type="monotone" dataKey="thd" stroke="#EF7C00" strokeWidth={2} dot={false} />
-                       </LineChart>
-                    </ResponsiveContainer>
-                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                 <div className="p-2 bg-green-100 text-green-700 rounded-full"><ZapOff size={16}/></div>
-                 <div>
-                    <div className="text-xs text-gray-500">Voltage Sag Protection</div>
-                    <div className="text-sm font-bold">Standby (Grid Stable)</div>
-                 </div>
-              </div>
-            </div>
-
-            <div className="p-3 bg-blue-50 rounded border border-blue-100">
-               <div className="flex justify-between items-start mb-2">
-                  <div className="text-xs font-bold text-[#003D7C] uppercase">CV Visual Load Verification</div>
-                  <Eye size={14} className="text-[#EF7C00]" />
-               </div>
-               <div className="space-y-2">
-                  <div className="flex justify-between text-xs">
-                     <span className="text-gray-600">Active LED Count:</span>
-                     <span className="font-mono font-bold">48 Units</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                     <span className="text-gray-600">Fan RPM (Visual):</span>
-                     <span className="font-mono font-bold">3,000 RPM</span>
-                  </div>
-                  <div className="flex justify-between text-xs border-t border-blue-200 pt-1 mt-1">
-                     <span className="text-gray-600">Est. Power Draw:</span>
-                     <span className="font-mono font-bold text-[#EF7C00]">12.4 kW</span>
-                  </div>
-                  <div className="text-[10px] text-green-600 italic mt-1">
-                     ✓ Matches Sensor Data
-                  </div>
-               </div>
-            </div>
-         </div>
-       </div>
-
-       {/* Flywheel Panel */}
-       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 relative overflow-hidden">
-         <div className="absolute -right-6 -bottom-6 opacity-5">
-            <Disc size={200} className="animate-spin-slow" />
-         </div>
-         <div className="flex justify-between items-center mb-4 relative z-10">
-           <h2 className="text-md font-bold text-[#003D7C] flex items-center gap-2">
-             <Disc size={18} className="text-[#EF7C00] animate-spin"/> 
-             Kinetic Energy Storage (Flywheel)
-           </h2>
-           <SystemStatusBadge status="charging" />
-         </div>
-
-         <div className="flex items-center gap-8 relative z-10">
-            {/* RPM Gauge Simulation */}
-            <div className="relative w-32 h-32 flex items-center justify-center">
-               <svg className="w-full h-full transform -rotate-90">
-                  <circle cx="64" cy="64" r="56" stroke="#f3f4f6" strokeWidth="8" fill="none" />
-                  <circle cx="64" cy="64" r="56" stroke="#EF7C00" strokeWidth="8" fill="none" strokeDasharray="351" strokeDashoffset={351 - (351 * (flywheelRPM/50000))} className="transition-all duration-500 ease-out" />
-               </svg>
-               <div className="absolute flex flex-col items-center">
-                  <span className="text-lg font-bold text-[#003D7C]">{flywheelRPM.toLocaleString()}</span>
-                  <span className="text-[10px] text-gray-500 uppercase">RPM</span>
-               </div>
-            </div>
-
-            <div className="flex-1 space-y-4">
-               <div className="grid grid-cols-2 gap-4">
-                  <div>
-                     <div className="text-xs text-gray-500 mb-1">Energy Stored</div>
-                     <div className="text-xl font-bold text-[#003D7C]">15.5 <span className="text-xs text-gray-400 font-normal">kWh</span></div>
-                  </div>
-                  <div>
-                     <div className="text-xs text-gray-500 mb-1">Est. Autonomy</div>
-                     <div className="text-xl font-bold text-[#003D7C]">45 <span className="text-xs text-gray-400 font-normal">sec</span></div>
-                  </div>
-               </div>
-               
-               <div className="bg-gray-50 p-2 rounded text-xs space-y-1">
-                  <div className="flex justify-between">
-                     <span className="text-gray-500">Bearing Temp:</span>
-                     <span className="font-mono text-green-600">38.5°C</span>
-                  </div>
-                  <div className="flex justify-between">
-                     <span className="text-gray-500">Vibration:</span>
-                     <span className="font-mono text-green-600">0.02 mm/s</span>
-                  </div>
-               </div>
-            </div>
-         </div>
-       </div>
-
-     </div>
-
-     {/* Secondary Metrics Row */}
-     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* DCHX Coating Monitor */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-           <div className="flex justify-between items-center mb-4">
-             <h2 className="text-sm font-bold text-[#003D7C] uppercase tracking-wide flex items-center gap-2">
-               <Layers size={16}/> DCHX Coating Health
-             </h2>
-             <SystemStatusBadge status="warning" />
-           </div>
-           <div className="flex gap-6">
-             <div className="w-1/3 flex flex-col justify-center items-center bg-gray-50 rounded-lg p-4 border border-dashed border-gray-300">
-                <div className="w-20 h-20 bg-gradient-to-br from-gray-200 to-gray-300 rounded relative mb-2 flex items-center justify-center">
-                   <span className="text-[10px] text-gray-500">UV Img</span>
-                   <div className="absolute top-4 left-2 w-3 h-6 bg-orange-400/50 blur-sm rounded-full"></div>
+        // 1. Liquid Cooling Detail View
+        const CoolingView = () => (
+            <div className="space-y-6 animate-in fade-in duration-500">
+                <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                    <h3 className="text-lg font-bold text-[#003D7C] mb-4 flex items-center gap-2">
+                        <Icon name="Droplets" className="text-[#EF7C00]" /> Rack Thermal Status (Liquid Loop)
+                    </h3>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
+                                <tr>
+                                    <th className="px-4 py-3">Rack ID</th>
+                                    <th className="px-4 py-3">Inlet Temp (°C)</th>
+                                    <th className="px-4 py-3">Outlet Temp (°C)</th>
+                                    <th className="px-4 py-3">Flow Rate (L/min)</th>
+                                    <th className="px-4 py-3">Pressure (Bar)</th>
+                                    <th className="px-4 py-3">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {[1, 2, 3, 4, 5].map(id => (
+                                    <tr key={id} className="hover:bg-gray-50">
+                                        <td className="px-4 py-3 font-medium">RACK-A0{id}</td>
+                                        <td className="px-4 py-3 text-blue-600">24.{Math.floor(Math.random()*9)}</td>
+                                        <td className="px-4 py-3 text-orange-600">38.{Math.floor(Math.random()*9)}</td>
+                                        <td className="px-4 py-3">12.5</td>
+                                        <td className="px-4 py-3">1.2</td>
+                                        <td className="px-4 py-3">
+                                            <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">Normal</span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                <span className="text-[10px] text-gray-500">Unit A-04 Scan</span>
-             </div>
-             <div className="flex-1 space-y-3">
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-gray-600">Micro-crack Density</span>
-                    <span className="font-bold">0.04%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-1.5">
-                    <div className="bg-green-500 h-1.5 rounded-full" style={{width: '10%'}}></div>
-                  </div>
+            </div>
+        );
+
+        // 2. Coating Monitor Detail View
+        const CoatingView = () => (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500">
+                <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                    <h3 className="text-lg font-bold text-[#003D7C] mb-4">Material Scanning Log</h3>
+                    <ul className="space-y-3">
+                        {[1, 2, 3].map(i => (
+                            <li key={i} className="flex items-start gap-3 p-3 bg-gray-50 rounded border border-gray-100">
+                                <div className="p-2 bg-white border border-gray-200 rounded text-gray-400">
+                                    <Icon name="Search" size={16} />
+                                </div>
+                                <div>
+                                    <div className="text-sm font-bold text-gray-700">Scan Sector #{100+i}</div>
+                                    <div className="text-xs text-gray-500">Timestamp: {getTimeLabel(i*120)}</div>
+                                    <div className="text-xs text-green-600 mt-1">No Micro-cracks detected. Hydrophobicity: 98%.</div>
+                                </div>
+                            </li>
+                        ))}
+                         <li className="flex items-start gap-3 p-3 bg-red-50 rounded border border-red-100">
+                            <div className="p-2 bg-white border border-red-200 rounded text-red-500">
+                                <Icon name="AlertTriangle" size={16} />
+                            </div>
+                            <div>
+                                <div className="text-sm font-bold text-red-700">Scan Sector #099</div>
+                                <div className="text-xs text-red-500">Timestamp: {getTimeLabel(600)}</div>
+                                <div className="text-xs text-red-600 mt-1">Biofouling detected (Aspergillus). Initiating UV pulse.</div>
+                            </div>
+                        </li>
+                    </ul>
                 </div>
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-gray-600">Biofouling (UV Detect)</span>
-                    <span className="font-bold text-[#EF7C00]">Detected</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-1.5">
-                    <div className="bg-[#EF7C00] h-1.5 rounded-full" style={{width: '25%'}}></div>
-                  </div>
-                  <p className="text-[10px] text-red-500 mt-1">⚠️ Aspergillus Fungi detected.</p>
+                <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 flex flex-col items-center justify-center">
+                    <div className="w-48 h-48 rounded-full border-8 border-gray-100 border-t-[#EF7C00] flex flex-col items-center justify-center relative">
+                        <span className="text-3xl font-bold text-[#003D7C]">94%</span>
+                        <span className="text-xs text-gray-500 uppercase mt-1">Health Index</span>
+                    </div>
+                    <p className="mt-4 text-sm text-gray-600 text-center">Predicted Maintenance: <br/><strong>142 Days</strong></p>
+                </div>
+            </div>
+        );
+
+        // 3. SLAM Detail View
+        const SlamView = () => (
+             <div className="bg-gray-900 p-6 rounded-lg shadow-sm border border-gray-800 h-[500px] flex flex-col font-mono text-xs">
+                <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
+                    <h3 className="text-green-400 font-bold flex items-center gap-2"><Icon name="Box" /> LIDAR Point Cloud Stream</h3>
+                    <span className="text-gray-500 animate-pulse">● LIVE</span>
+                </div>
+                <div className="flex-1 overflow-hidden relative">
+                    {/* Mock Grid Map */}
+                    <div className="absolute inset-0 grid grid-cols-12 grid-rows-8 opacity-20">
+                        {[...Array(96)].map((_,i) => <div key={i} className="border border-green-500/30"></div>)}
+                    </div>
+                    <div className="absolute top-1/4 left-1/4 w-4 h-4 bg-blue-500 rounded-full animate-ping"></div>
+                    <div className="absolute top-1/4 left-1/4 w-4 h-4 bg-blue-500 rounded-full"></div>
+                    
+                    {/* Log Overlay */}
+                    <div className="absolute bottom-0 left-0 p-4 w-full bg-gradient-to-t from-gray-900 to-transparent">
+                        <p className="text-green-300">>> [SLAM] Keyframe added id=4592 pos=(12.4, 4.2, 0.0)</p>
+                        <p className="text-gray-400">>> [IMU] Bias update: acc=[-0.01, 0.02, 0.09]</p>
+                        <p className="text-green-300">>> [LOOP] Loop closure detected with Frame #4200 (Score: 0.98)</p>
+                        <p className="text-gray-400">>> [GEO] Blanking panel verification: MISSING at Rack U24</p>
+                    </div>
                 </div>
              </div>
-           </div>
-        </div>
+        );
 
-        {/* Visual SLAM / Geometry */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-           <div className="flex justify-between items-center mb-4">
-             <h2 className="text-sm font-bold text-[#003D7C] uppercase tracking-wide flex items-center gap-2">
-               <Box size={16}/> Visual SLAM Geometry
-             </h2>
-             <SystemStatusBadge status="active" />
-           </div>
-           <div className="relative h-32 bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center mb-3">
-              <div className="absolute inset-0 grid grid-cols-6 grid-rows-4 opacity-20">
-                 {[...Array(24)].map((_,i) => <div key={i} className="border border-green-500/30"></div>)}
-              </div>
-              <div className="text-green-400 font-mono text-xs z-10 p-2">
-                [LIDAR] Scanning Row B...<br/>
-                [DIFF]  + Blanking Panel @ U24<br/>
-                [SYNC]  Updating CFD Mesh...
-              </div>
-           </div>
-           <div className="grid grid-cols-2 gap-4 text-xs">
-              <div className="p-2 bg-blue-50 rounded text-center">
-                <span className="block text-gray-500">Last Scan</span>
-                <span className="font-bold text-[#003D7C]">10s ago</span>
-              </div>
-              <div className="p-2 bg-blue-50 rounded text-center">
-                <span className="block text-gray-500">Drift</span>
-                <span className="font-bold text-[#003D7C]">0.5% (Low)</span>
-              </div>
-           </div>
-        </div>
-     </div>
-   </div>
- );
-
- return (
-   <div className="flex h-screen bg-[#F5F6F8] font-sans text-gray-800">
-     {/* Sidebar */}
-     <aside className={`bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
-       <div className="h-16 flex items-center justify-center border-b border-gray-100">
-         <div className="flex items-center gap-2 text-[#003D7C]">
-           <div className="w-8 h-8 bg-[#EF7C00] rounded flex items-center justify-center text-white font-bold text-lg">N</div>
-           {isSidebarOpen && <span className="font-bold text-xl tracking-tight">STDCZt 2.0</span>}
-         </div>
-       </div>
-
-       <nav className="flex-1 py-6 space-y-1">
-         <div className={`px-4 mb-4 text-xs font-semibold text-gray-400 uppercase tracking-wider ${!isSidebarOpen && 'hidden'}`}>
-           Perception Layer
-         </div>
-         <SidebarItem id="overview" icon={Activity} label="System Overview" />
-         <SidebarItem id="cooling" icon={Droplets} label="Liquid Cooling Safety" alert={true} />
-         <SidebarItem id="coating" icon={Layers} label="DCHX Coating Monitor" />
-         <SidebarItem id="slam" icon={Box} label="Visual SLAM & Geo" />
-         
-         <div className={`px-4 mt-8 mb-4 text-xs font-semibold text-gray-400 uppercase tracking-wider ${!isSidebarOpen && 'hidden'}`}>
-            Energy & Twin
-         </div>
-         <SidebarItem id="energy" icon={Zap} label="SST & Flywheel" />
-         <SidebarItem id="cfd" icon={Wind} label="NUS CFD Engine" />
-         <SidebarItem id="ai" icon={Cpu} label="NUS AI Control" />
-       </nav>
-
-       <div className="p-4 border-t border-gray-100">
-          <div className="flex items-center gap-3 w-full">
-             <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center font-bold text-xs text-gray-600">
-               DC
-             </div>
-             {isSidebarOpen && (
-               <div className="text-left overflow-hidden">
-                 <div className="text-xs font-bold text-gray-700 truncate">Dcdeeptech Admin</div>
-                 <div className="text-[10px] text-gray-500">Lead Integrator</div>
-               </div>
-             )}
-          </div>
-       </div>
-     </aside>
-
-     {/* Main Content */}
-     <div className="flex-1 flex flex-col overflow-hidden">
-       {/* Header */}
-       <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm z-10">
-         <div className="flex items-center gap-4">
-           <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-gray-100 rounded text-gray-500">
-             <Menu size={20} />
-           </button>
-           <div className="hidden md:block">
-              <h1 className="text-lg font-bold text-[#003D7C]">Tropical Data Center Zero-touch 2.0</h1>
-              <div className="flex gap-2 text-[10px] text-gray-500">
-                 <span>POC Phase 1</span>
-                 <span>•</span>
-                 <span>Site: Singapore (Wet Bulb 27°C)</span>
-              </div>
-           </div>
-         </div>
-         
-         <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full border border-gray-200">
-               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-               <span className="text-xs font-mono font-medium text-gray-600">{currentTime.toLocaleTimeString()}</span>
+        // 4. CFD View
+        const CfdView = () => (
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                <h3 className="text-lg font-bold text-[#003D7C] mb-6 flex items-center gap-2">
+                    <Icon name="Wind" className="text-[#EF7C00]" /> Simulation Parameters (Digital Twin)
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="p-4 bg-gray-50 rounded border border-gray-100">
+                        <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Boundary Conditions</label>
+                        <div className="space-y-2">
+                            <div className="flex justify-between text-sm"><span className="text-gray-600">Inlet Velocity:</span> <b>2.4 m/s</b></div>
+                            <div className="flex justify-between text-sm"><span className="text-gray-600">Inlet Temp:</span> <b>24.0 °C</b></div>
+                            <div className="flex justify-between text-sm"><span className="text-gray-600">Pressure Drop:</span> <b>45 Pa</b></div>
+                        </div>
+                    </div>
+                    <div className="p-4 bg-gray-50 rounded border border-gray-100">
+                        <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Mesh Statistics</label>
+                        <div className="space-y-2">
+                            <div className="flex justify-between text-sm"><span className="text-gray-600">Cell Count:</span> <b>12.4 M</b></div>
+                            <div className="flex justify-between text-sm"><span className="text-gray-600">Skewness:</span> <b>0.45 (Good)</b></div>
+                            <div className="flex justify-between text-sm"><span className="text-gray-600">Convergence:</span> <b>1e-4</b></div>
+                        </div>
+                    </div>
+                    <div className="p-4 bg-blue-50 rounded border border-blue-100 flex flex-col justify-center items-center">
+                        <button className="bg-[#003D7C] text-white px-4 py-2 rounded text-sm font-bold hover:bg-blue-800 transition-colors w-full mb-2">
+                            Update Model
+                        </button>
+                        <span className="text-xs text-gray-500">Last Sync: 2 mins ago</span>
+                    </div>
+                </div>
             </div>
-            <button className="relative p-2 text-gray-500 hover:bg-gray-100 rounded-full">
-               <Bell size={20} />
-               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#EF7C00] rounded-full"></span>
-            </button>
-            <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full">
-               <Settings size={20} />
-            </button>
-         </div>
-       </header>
+        );
 
-       {/* Scrollable Content Area */}
-       <main className="flex-1 overflow-y-auto p-6 md:p-8">
-          <div className="max-w-7xl mx-auto">
-             {activeTab === 'overview' && <OverviewDashboard />}
-             {activeTab !== 'overview' && (
-               <div className="flex flex-col items-center justify-center h-96 text-gray-400">
-                  <div className="text-center">
-                    <Settings size={48} className="mx-auto mb-4 text-[#003D7C] opacity-20" />
-                    <h2 className="text-lg font-semibold text-gray-600">Module View: {activeTab}</h2>
-                    <p className="text-sm">Detailed telemetry and control view for this subsystem.</p>
-                  </div>
-               </div>
-             )}
-          </div>
-          
-          <footer className="mt-8 pt-6 border-t border-gray-200 text-center text-xs text-gray-400 pb-4">
-             <div className="flex justify-center gap-6 mb-2">
-                <span>Dcdeeptech</span>
-                <span>HHE (Energy)</span>
-                <span>Axiom Deta (Infra)</span>
-                <span>NUS (Digital Twin)</span>
+        // 5. AI Control View
+        const AiView = () => (
+             <div className="bg-black text-gray-200 p-6 rounded-lg shadow-lg font-mono text-xs h-[500px] overflow-y-auto">
+                <div className="mb-4 text-[#EF7C00]">root@stdczt-core:~/ai-control# tail -f decision_log.txt</div>
+                <div className="space-y-1">
+                    <p><span className="text-gray-500">[{getTimeLabel(10)}]</span> <span className="text-blue-400">[INFO]</span> Gathering telemetry from MQTT broker...</p>
+                    <p><span className="text-gray-500">[{getTimeLabel(8)}]</span> <span className="text-blue-400">[INFO]</span> Rack A-04 temp delta &gt; 12C. Analyzing...</p>
+                    <p><span className="text-gray-500">[{getTimeLabel(5)}]</span> <span className="text-purple-400">[MODEL]</span> Prediction: Potential localized hotspot in 5 mins.</p>
+                    <p><span className="text-gray-500">[{getTimeLabel(2)}]</span> <span className="text-green-400">[ACTION]</span> Increasing Fan Speed PWM to 65% for Zone A.</p>
+                    <p><span className="text-gray-500">[{getTimeLabel(1)}]</span> <span className="text-green-400">[ACTION]</span> Adjusting Liquid Flow Valve V-04 to 80%.</p>
+                    <p><span className="text-gray-500">[{getTimeLabel(0)}]</span> <span className="text-blue-400">[INFO]</span> Optimizing PUE... Current target: 1.15</p>
+                    <p className="animate-pulse">_</p>
+                </div>
              </div>
-             <p>© 2025 STDCZt 2.0 Project. Confidential.</p>
-          </footer>
-       </main>
-     </div>
-   </div>
- );
+        );
 
-}
+        // --- Main App Component ---
 
+        function App() {
+            const [activeTab, setActiveTab] = useState('overview');
+            const [isSidebarOpen, setSidebarOpen] = useState(true);
+            
+            // Mock Data
+            const [coolingData, setCoolingData] = useState([]);
+            const [sstData, setSstData] = useState([]);
+            const [currentTime, setCurrentTime] = useState(new Date());
+            const [flywheelRPM, setFlywheelRPM] = useState(45000);
+
+            // Generators
+            const generateCoolingData = () => {
+                const data = [];
+                for (let i = 0; i < 20; i++) {
+                    data.push({
+                        time: getTimeLabel(20 - i),
+                        voidFraction: 0.3 + Math.random() * 0.2,
+                        burnoutProb: Math.random() * 0.15,
+                        limit: 0.8
+                    });
+                }
+                return data;
+            };
+
+            const generateSSTData = () => {
+                const data = [];
+                for (let i = 0; i < 15; i++) {
+                    data.push({
+                        time: i,
+                        thd: 1.5 + Math.random() * 0.5,
+                        voltage: 230 + (Math.random() * 2 - 1)
+                    });
+                }
+                return data;
+            };
+
+            // Init Data
+            useEffect(() => {
+                setCoolingData(generateCoolingData());
+                setSstData(generateSSTData());
+            }, []);
+
+            // Simulation Loop
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    setCoolingData(prev => {
+                        if(prev.length === 0) return prev;
+                        const newData = [...prev.slice(1), {
+                            time: getTimeLabel(0),
+                            voidFraction: 0.3 + Math.random() * 0.25,
+                            burnoutProb: Math.random() * 0.2,
+                            limit: 0.8
+                        }];
+                        return newData;
+                    });
+
+                    setSstData(prev => {
+                         if(prev.length === 0) return prev;
+                         const newData = [...prev.slice(1), {
+                             time: prev[prev.length-1].time + 1,
+                             thd: 1.5 + Math.random() * 0.8,
+                             voltage: 230 + (Math.random() * 1.5 - 0.75)
+                         }];
+                         return newData;
+                    });
+
+                    setFlywheelRPM(45000 + Math.floor(Math.random() * 50 - 25));
+                    setCurrentTime(new Date());
+                }, 1000);
+                return () => clearInterval(interval);
+            }, []);
+
+            // Shared Components
+            const SystemStatusBadge = ({ status }) => {
+                const colors = {
+                    active: "bg-green-100 text-green-700 border-green-200",
+                    warning: "bg-orange-100 text-[#EF7C00] border-orange-200",
+                    critical: "bg-red-100 text-red-700 border-red-200",
+                    offline: "bg-gray-100 text-gray-500 border-gray-200",
+                    charging: "bg-blue-100 text-blue-700 border-blue-200"
+                };
+                return (
+                    <span className={`px-2 py-0.5 rounded text-xs font-semibold border ${colors[status] || colors.offline} uppercase tracking-wide`}>
+                        {status}
+                    </span>
+                );
+            };
+
+            const StatCard = ({ title, value, unit, trend, icon, status = "neutral" }) => (
+                <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start mb-2">
+                        <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">{title}</h3>
+                        <Icon name={icon} size={16} className={status === "critical" ? "text-red-500" : "text-gray-400"} />
+                    </div>
+                    <div className="flex items-end gap-2">
+                        <span className="text-2xl font-bold text-[#003D7C]">{value}</span>
+                        <span className="text-xs text-gray-500 mb-1">{unit}</span>
+                    </div>
+                    {trend && (
+                        <div className={`text-xs mt-2 flex items-center ${trend.includes('+') ? 'text-red-500' : 'text-green-500'}`}>
+                            {trend.includes('+') ? '▲' : '▼'} {trend} vs baseline
+                        </div>
+                    )}
+                </div>
+            );
+
+            const SidebarItem = ({ id, icon, label, alert }) => (
+                <button 
+                    onClick={() => setActiveTab(id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors border-r-4
+                        ${activeTab === id 
+                            ? `bg-blue-50 text-[#003D7C] border-[#EF7C00]` 
+                            : 'text-gray-500 border-transparent hover:bg-gray-50 hover:text-gray-700'}
+                    `}
+                >
+                    <Icon name={icon} size={18} />
+                    {isSidebarOpen && <span>{label}</span>}
+                    {isSidebarOpen && alert && <div className="ml-auto w-2 h-2 bg-[#EF7C00] rounded-full animate-pulse" />}
+                </button>
+            );
+
+            // Overview Dashboard Content
+            const OverviewDashboard = () => (
+                <div className="space-y-6 animate-in fade-in duration-500">
+                    {/* KPI Row */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <StatCard title="Real-time PUE" value="1.18" unit="" trend="-0.02" icon="Zap" />
+                        <StatCard title="Load Density" value="48.2" unit="kW/Rack" trend="+1.2%" icon="Thermometer" />
+                        <StatCard title="CV Latency" value="18" unit="ms" trend="-2ms" icon="Activity" />
+                        <StatCard title="Energy Resilience" value="100" unit="%" icon="BatteryCharging" status="good" />
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* Main Visualization */}
+                        <div className="lg:col-span-2 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                            <div className="flex justify-between items-center mb-6">
+                                <div>
+                                    <h2 className="text-lg font-bold text-[#003D7C] flex items-center gap-2">
+                                        <Icon name="Droplets" className="text-[#EF7C00]"/> 
+                                        Liquid Cooling Safety Barrier
+                                    </h2>
+                                    <p className="text-xs text-gray-500 mt-1">Real-time Boiling Regime & Burnout Probability (CHF)</p>
+                                </div>
+                                <SystemStatusBadge status="active" />
+                            </div>
+                            
+                            <div className="h-64 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={coolingData}>
+                                        <defs>
+                                            <linearGradient id="colorVoid" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#003D7C" stopOpacity={0.1}/>
+                                                <stop offset="95%" stopColor="#003D7C" stopOpacity={0}/>
+                                            </linearGradient>
+                                            <linearGradient id="colorBurn" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#EF7C00" stopOpacity={0.1}/>
+                                                <stop offset="95%" stopColor="#EF7C00" stopOpacity={0}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                        <XAxis dataKey="time" tick={{fontSize: 10}} stroke="#9ca3af" />
+                                        <YAxis tick={{fontSize: 10}} stroke="#9ca3af" />
+                                        <RechartsTooltip contentStyle={{border: 'none', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
+                                        <Area type="monotone" dataKey="voidFraction" name="Void Fraction" stroke="#003D7C" fillOpacity={1} fill="url(#colorVoid)" strokeWidth={2} />
+                                        <Area type="monotone" dataKey="burnoutProb" name="Burnout Prob" stroke="#EF7C00" fillOpacity={1} fill="url(#colorBurn)" strokeWidth={2} />
+                                        <Line type="monotone" dataKey="limit" name="Limit" stroke="#FF0000" strokeDasharray="5 5" strokeWidth={1} dot={false} />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Integration Status */}
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-0 overflow-hidden flex flex-col">
+                            <div className="p-4 border-b border-gray-100 bg-gray-50">
+                                <h2 className="text-sm font-bold text-[#003D7C] uppercase tracking-wide">Cognitive Digital Twin API</h2>
+                            </div>
+                            <div className="flex-1 p-4 space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-blue-50 rounded text-[#003D7C]"><Icon name="Wind" size={16}/></div>
+                                        <div><div className="text-sm font-semibold">CFD Engine</div><div className="text-[10px] text-gray-500">Geometry Sync</div></div>
+                                    </div>
+                                    <div className="text-xs font-bold text-green-600 flex items-center gap-1"><Icon name="CheckCircle" size={10}/> Synced</div>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-orange-50 text-[#EF7C00]"><Icon name="Cpu" size={16}/></div>
+                                        <div><div className="text-sm font-semibold">AI Control Engine</div><div className="text-[10px] text-gray-500">Telemetry (MQTT)</div></div>
+                                    </div>
+                                    <div className="text-xs font-bold text-green-600 flex items-center gap-1"><Icon name="Activity" size={10}/> Active</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                     {/* SST & Flywheel Panel */}
+                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                       {/* SST */}
+                       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 relative overflow-hidden">
+                         <div className="absolute top-0 right-0 p-4 opacity-10"><Icon name="Zap" size={120} /></div>
+                         <div className="flex justify-between items-center mb-4 relative z-10">
+                           <h2 className="text-md font-bold text-[#003D7C] flex items-center gap-2"><Icon name="Zap" size={18} className="text-[#EF7C00]"/> HHE Solid State Transformer (SST)</h2>
+                           <SystemStatusBadge status="active" />
+                         </div>
+                         <div className="grid grid-cols-2 gap-4 relative z-10">
+                            <div className="space-y-4">
+                              <div className="p-3 bg-gray-50 rounded border border-gray-100">
+                                 <div className="text-xs text-gray-500 mb-1">Grid Stability (THD)</div>
+                                 <div className="flex items-end gap-2">
+                                   <span className="text-2xl font-bold text-[#003D7C]">{sstData[sstData.length-1]?.thd.toFixed(2)}%</span>
+                                   <span className="text-[10px] text-green-600 mb-1">Excellent (&lt;5%)</span>
+                                 </div>
+                                 <div className="h-10 mt-2">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                       <LineChart data={sstData}>
+                                          <Line type="monotone" dataKey="thd" stroke="#EF7C00" strokeWidth={2} dot={false} />
+                                       </LineChart>
+                                    </ResponsiveContainer>
+                                 </div>
+                              </div>
+                            </div>
+                            <div className="p-3 bg-blue-50 rounded border border-blue-100">
+                               <div className="flex justify-between items-start mb-2"><div className="text-xs font-bold text-[#003D7C] uppercase">CV Load Verification</div><Icon name="Eye" size={14} className="text-[#EF7C00]" /></div>
+                               <div className="space-y-2">
+                                  <div className="flex justify-between text-xs"><span className="text-gray-600">Active LED Count:</span><span className="font-mono font-bold">48 Units</span></div>
+                                  <div className="flex justify-between text-xs border-t border-blue-200 pt-1 mt-1"><span className="text-gray-600">Est. Power Draw:</span><span className="font-mono font-bold text-[#EF7C00]">12.4 kW</span></div>
+                               </div>
+                            </div>
+                         </div>
+                       </div>
+
+                       {/* Flywheel */}
+                       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 relative overflow-hidden">
+                         <div className="absolute -right-6 -bottom-6 opacity-5"><Icon name="Disc" size={200} className="animate-spin-slow" /></div>
+                         <div className="flex justify-between items-center mb-4 relative z-10">
+                           <h2 className="text-md font-bold text-[#003D7C] flex items-center gap-2"><Icon name="Disc" size={18} className="text-[#EF7C00] animate-spin-slow"/> Kinetic Energy Storage</h2>
+                           <SystemStatusBadge status="charging" />
+                         </div>
+                         <div className="flex items-center gap-8 relative z-10">
+                            <div className="relative w-32 h-32 flex items-center justify-center">
+                               <svg className="w-full h-full transform -rotate-90">
+                                  <circle cx="64" cy="64" r="56" stroke="#f3f4f6" strokeWidth="8" fill="none" />
+                                  <circle cx="64" cy="64" r="56" stroke="#EF7C00" strokeWidth="8" fill="none" strokeDasharray="351" strokeDashoffset={351 - (351 * (flywheelRPM/50000))} className="transition-all duration-500 ease-out" />
+                               </svg>
+                               <div className="absolute flex flex-col items-center">
+                                  <span className="text-lg font-bold text-[#003D7C]">{flywheelRPM.toLocaleString()}</span>
+                                  <span className="text-[10px] text-gray-500 uppercase">RPM</span>
+                               </div>
+                            </div>
+                            <div className="flex-1 space-y-4">
+                               <div className="grid grid-cols-2 gap-4">
+                                  <div><div className="text-xs text-gray-500 mb-1">Energy Stored</div><div className="text-xl font-bold text-[#003D7C]">15.5 <span className="text-xs text-gray-400 font-normal">kWh</span></div></div>
+                                  <div><div className="text-xs text-gray-500 mb-1">Est. Autonomy</div><div className="text-xl font-bold text-[#003D7C]">45 <span className="text-xs text-gray-400 font-normal">sec</span></div></div>
+                               </div>
+                            </div>
+                         </div>
+                       </div>
+                    </div>
+                </div>
+            );
+
+            // --- Main Layout ---
+            return (
+                <div className="flex h-screen bg-[#F5F6F8] font-sans text-gray-800">
+                    {/* Sidebar */}
+                    <aside className={`bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
+                        <div className="h-16 flex items-center justify-center border-b border-gray-100">
+                            <div className="flex items-center gap-2 text-[#003D7C]">
+                                <div className="w-8 h-8 bg-[#EF7C00] rounded flex items-center justify-center text-white font-bold text-lg">N</div>
+                                {isSidebarOpen && <span className="font-bold text-xl tracking-tight">STDCZt 2.0</span>}
+                            </div>
+                        </div>
+
+                        <nav className="flex-1 py-6 space-y-1">
+                            <div className={`px-4 mb-4 text-xs font-semibold text-gray-400 uppercase tracking-wider ${!isSidebarOpen && 'hidden'}`}>Perception Layer</div>
+                            <SidebarItem id="overview" icon="Activity" label="System Overview" />
+                            <SidebarItem id="cooling" icon="Droplets" label="Liquid Cooling Safety" alert={true} />
+                            <SidebarItem id="coating" icon="Layers" label="DCHX Coating Monitor" />
+                            <SidebarItem id="slam" icon="Box" label="Visual SLAM & Geo" />
+                            
+                            <div className={`px-4 mt-8 mb-4 text-xs font-semibold text-gray-400 uppercase tracking-wider ${!isSidebarOpen && 'hidden'}`}>Energy & Twin</div>
+                            <SidebarItem id="energy" icon="Zap" label="SST & Flywheel" />
+                            <SidebarItem id="cfd" icon="Wind" label="NUS CFD Engine" />
+                            <SidebarItem id="ai" icon="Cpu" label="NUS AI Control" />
+                        </nav>
+                        
+                        <div className="p-4 border-t border-gray-100">
+                            <div className="flex items-center gap-3 w-full">
+                                <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center font-bold text-xs text-gray-600">DC</div>
+                                {isSidebarOpen && (
+                                    <div className="text-left overflow-hidden">
+                                        <div className="text-xs font-bold text-gray-700 truncate">Admin User</div>
+                                        <div className="text-[10px] text-gray-500">Lead Integrator</div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </aside>
+
+                    {/* Main Content */}
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm z-10">
+                            <div className="flex items-center gap-4">
+                                <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-gray-100 rounded text-gray-500"><Icon name="Menu" size={20} /></button>
+                                <div className="hidden md:block">
+                                    <h1 className="text-lg font-bold text-[#003D7C]">Tropical Data Center Zero-touch 2.0</h1>
+                                    <div className="flex gap-2 text-[10px] text-gray-500"><span>POC Phase 1</span><span>•</span><span>Site: Singapore (Wet Bulb 27°C)</span></div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full border border-gray-200">
+                                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                                    <span className="text-xs font-mono font-medium text-gray-600">{currentTime.toLocaleTimeString()}</span>
+                                </div>
+                                <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"><Icon name="Bell" size={20} /></button>
+                                <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"><Icon name="Settings" size={20} /></button>
+                            </div>
+                        </header>
+
+                        <main className="flex-1 overflow-y-auto p-6 md:p-8">
+                            <div className="max-w-7xl mx-auto">
+                                {/* DYNAMIC CONTENT SWITCHING */}
+                                {activeTab === 'overview' && <OverviewDashboard />}
+                                {activeTab === 'cooling' && <CoolingView />}
+                                {activeTab === 'coating' && <CoatingView />}
+                                {activeTab === 'slam' && <SlamView />}
+                                {activeTab === 'energy' && (
+                                    <div className="text-center text-gray-500 mt-20">
+                                        <h3 className="text-xl font-bold mb-2">Detailed Energy Analysis</h3>
+                                        <p>See Overview Dashboard for real-time SST & Flywheel data.</p>
+                                    </div>
+                                )}
+                                {activeTab === 'cfd' && <CfdView />}
+                                {activeTab === 'ai' && <AiView />}
+                            </div>
+                            
+                            <footer className="mt-8 pt-6 border-t border-gray-200 text-center text-xs text-gray-400 pb-4">
+                                <div className="flex justify-center gap-6 mb-2">
+                                    <span>Dcdeeptech</span><span>HHE (Energy)</span><span>Axiom Deta (Infra)</span><span>NUS (Digital Twin)</span>
+                                </div>
+                                <p>© 2025 STDCZt 2.0 Project. Confidential.</p>
+                            </footer>
+                        </main>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+    
+    <script>
+        // Activate lucide after react render if needed, but our component handles it.
+        // Keeping this for non-react elements if any.
+        window.addEventListener('load', function() {
+            if (window.lucide) {
+                window.lucide.createIcons();
+            }
+        });
+    </script>
+</body>
+</html>
