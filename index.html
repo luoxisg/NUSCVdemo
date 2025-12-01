@@ -2,34 +2,33 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>NUS Tropical DC Zero-touch 2.0</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- 1. React & ReactDOM (Locked to 18.2.0 for stability) -->
+    <!-- React & ReactDOM (Stable) -->
     <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
     
-    <!-- 2. Prop-types (CRITICAL: Required for Recharts UMD to work) -->
+    <!-- Prop-types -->
     <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
 
-    <!-- 3. Recharts (Locked to 2.12.7 to match React 18) -->
+    <!-- Recharts (Stable) -->
     <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
     
-    <!-- 4. Babel for JSX -->
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- 5. Lucide Icons -->
+    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
-        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
         .animate-spin-slow { animation: spin 8s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        
-        /* Custom Scrollbar for Logs */
+        /* Hide scrollbar */
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
@@ -38,45 +37,31 @@
     <div id="root" class="h-full"></div>
 
     <script type="text/babel">
-        // Ensure globals are available
-        const { useState, useEffect, useRef } = React;
-        // Access Recharts from global window object
-        const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip: RechartsTooltip, ResponsiveContainer, AreaChart, Area } = window.Recharts;
+        const { useState, useEffect, useRef, useMemo } = React;
+        const { 
+            LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip: RechartsTooltip, 
+            ResponsiveContainer, AreaChart, Area, BarChart, Bar, ScatterChart, Scatter, 
+            ZAxis, Legend, ReferenceLine 
+        } = window.Recharts;
 
-        // --- Icon Helper Component (FIXED) ---
-        // Uses lucide.createIcons instead of toSvg to be compatible with latest CDN version
+        // --- Icon Helper ---
         const Icon = ({ name, size = 18, className = "" }) => {
             const iconRef = useRef(null);
-            
             useEffect(() => {
                 if (iconRef.current && window.lucide && window.lucide.createIcons) {
-                    // Create a temporary i tag that Lucide will replace
                     const iTag = document.createElement('i');
                     iTag.setAttribute('data-lucide', name);
-                    
-                    // Clear the container and append the new tag
                     iconRef.current.innerHTML = '';
                     iconRef.current.appendChild(iTag);
-                    
-                    // Ask Lucide to transform the tag inside our container
                     window.lucide.createIcons({
                         root: iconRef.current,
                         nameAttr: 'data-lucide',
-                        attrs: {
-                            width: size,
-                            height: size,
-                            class: className
-                        }
+                        attrs: { width: size, height: size, class: className }
                     });
                 }
             }, [name, size, className]);
-
-            return <span ref={iconRef} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}></span>;
+            return <span ref={iconRef} className="flex items-center justify-center"></span>;
         };
-
-        // --- Constants & Helpers ---
-        const NUS_BLUE = '#003D7C';
-        const NUS_ORANGE = '#EF7C00';
 
         const getTimeLabel = (offsetSeconds = 0) => {
             const d = new Date();
@@ -84,38 +69,301 @@
             return d.toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
         };
 
-        // --- Sub-Module Components ---
+        // --- 1. Coating Monitor View (Rich) ---
+        const CoatingView = () => {
+            // Mock defect data
+            const defectData = useMemo(() => Array.from({length: 15}, () => ({
+                x: Math.floor(Math.random() * 100),
+                y: Math.floor(Math.random() * 100),
+                z: Math.floor(Math.random() * 100), // severity
+            })), []);
 
-        // 1. Liquid Cooling Detail View
+            const healthTrend = [
+                { month: 'Jan', health: 98 }, { month: 'Feb', health: 97.5 }, { month: 'Mar', health: 97.2 },
+                { month: 'Apr', health: 96.8 }, { month: 'May', health: 96.5 }, { month: 'Jun', health: 96.1 },
+            ];
+
+            return (
+                <div className="space-y-4 animate-in fade-in duration-500 pb-20">
+                    {/* Surface Defect Map */}
+                    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                        <h3 className="text-sm font-bold text-[#003D7C] mb-4 flex items-center gap-2">
+                            <Icon name="Layers" className="text-[#EF7C00]" size={16}/> Surface Defect Map (Unit A-04)
+                        </h3>
+                        <div className="h-56 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: -10 }}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis type="number" dataKey="x" name="Pos X" unit="cm" stroke="#9ca3af" tick={{fontSize:9}} />
+                                    <YAxis type="number" dataKey="y" name="Pos Y" unit="cm" stroke="#9ca3af" tick={{fontSize:9}} />
+                                    <ZAxis type="number" dataKey="z" range={[30, 200]} name="Severity" />
+                                    <RechartsTooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{borderRadius: '8px', fontSize: '10px'}} />
+                                    <Scatter name="Defects" data={defectData} fill="#EF7C00" />
+                                </ScatterChart>
+                            </ResponsiveContainer>
+                        </div>
+                        <div className="text-center text-[10px] text-gray-500 mt-2">
+                            Detected Micro-cracks Distribution (Scanner Feed)
+                        </div>
+                    </div>
+
+                    {/* Health & Metrics */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                             <h3 className="text-sm font-bold text-[#003D7C] mb-2">Health Prediction</h3>
+                             <div className="h-40 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={healthTrend}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                        <XAxis dataKey="month" tick={{fontSize: 9}} stroke="#9ca3af" />
+                                        <YAxis domain={[95, 100]} tick={{fontSize: 9}} stroke="#9ca3af" width={25} />
+                                        <RechartsTooltip contentStyle={{borderRadius: '8px', fontSize: '10px'}} />
+                                        <Line type="monotone" dataKey="health" stroke="#003D7C" strokeWidth={2} dot={{r:2}} />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                             </div>
+                         </div>
+                         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-col justify-center items-center">
+                             <div className="relative w-24 h-24 flex items-center justify-center">
+                                 <svg className="w-full h-full transform -rotate-90">
+                                     <circle cx="48" cy="48" r="40" stroke="#f3f4f6" strokeWidth="8" fill="none" />
+                                     <circle cx="48" cy="48" r="40" stroke="#003D7C" strokeWidth="8" fill="none" strokeDasharray="251" strokeDashoffset="10" />
+                                 </svg>
+                                 <div className="absolute text-center">
+                                     <span className="text-xl font-bold text-[#003D7C]">96%</span>
+                                 </div>
+                             </div>
+                             <p className="text-xs font-bold text-gray-600 mt-2">Surface Integrity</p>
+                             <p className="text-[10px] text-green-600">Next Maint: 142 Days</p>
+                         </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 2. Visual SLAM View (Rich) ---
+        const SlamView = () => {
+            const [robotPos, setRobotPos] = useState({ x: 20, y: 20 });
+            
+            // Map points
+            const mapPoints = useMemo(() => {
+                const pts = [];
+                for(let i=0; i<100; i+=5) pts.push({x: i, y: 0}, {x: i, y: 100}, {x: 0, y: i}, {x: 100, y: i}); 
+                for(let i=30; i<70; i+=10) pts.push({x: i, y: 40}, {x: i, y: 60}); 
+                return pts;
+            }, []);
+
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    setRobotPos(prev => ({
+                        x: (prev.x + 2) % 90 + 5,
+                        y: 40 + Math.sin(prev.x / 10) * 20
+                    }));
+                }, 500);
+                return () => clearInterval(interval);
+            }, []);
+
+            return (
+                <div className="space-y-4 animate-in fade-in duration-500 pb-20">
+                    <div className="bg-gray-900 p-4 rounded-lg shadow-sm border border-gray-800">
+                        <div className="flex justify-between items-center mb-2">
+                             <h3 className="text-sm font-bold text-green-400 flex items-center gap-2"><Icon name="Box" size={16}/> Live LIDAR Map</h3>
+                             <span className="text-[10px] text-gray-500 animate-pulse">● TRACKING</span>
+                        </div>
+                        <div className="h-56 w-full bg-black/50 rounded border border-gray-700 relative overflow-hidden">
+                             {/* Map Points */}
+                             {mapPoints.map((pt, i) => (
+                                 <div key={i} className="absolute w-1 h-1 bg-green-500/50 rounded-full" style={{left: `${pt.x}%`, top: `${pt.y}%`}} />
+                             ))}
+                             {/* Robot */}
+                             <div 
+                                className="absolute w-3 h-3 bg-blue-500 border border-white rounded-full transition-all duration-500 ease-linear shadow-[0_0_10px_rgba(59,130,246,0.8)]"
+                                style={{left: `${robotPos.x}%`, top: `${robotPos.y}%`}}
+                             />
+                             {/* Scanner Effect */}
+                             <div className="absolute w-20 h-20 border border-green-500/20 rounded-full transition-all duration-500 ease-linear flex items-center justify-center"
+                                  style={{left: `calc(${robotPos.x}% - 40px)`, top: `calc(${robotPos.y}% - 40px)`}}>
+                                  <div className="w-full h-[1px] bg-green-500/30 animate-spin-slow"></div>
+                             </div>
+                        </div>
+                        <div className="flex justify-between mt-2 font-mono text-[10px] text-green-300">
+                             <span>X: {robotPos.x.toFixed(1)} m</span>
+                             <span>Y: {robotPos.y.toFixed(1)} m</span>
+                             <span>Conf: 99.8%</span>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                         <div className="flex items-center gap-3 mb-2">
+                            <div className="p-2 bg-blue-50 rounded-full"><Icon name="Map" size={16} className="text-[#003D7C]"/></div>
+                            <div>
+                                <h3 className="text-sm font-bold text-[#003D7C]">Geometry Check</h3>
+                                <p className="text-[10px] text-gray-500">Comparing Scan vs CAD</p>
+                            </div>
+                         </div>
+                         <div className="space-y-2">
+                             <div className="flex justify-between text-xs">
+                                 <span>Drift Error</span>
+                                 <span className="font-bold">0.02 cm</span>
+                             </div>
+                             <div className="w-full bg-gray-100 rounded-full h-1.5">
+                                 <div className="bg-green-500 h-1.5 rounded-full" style={{width: '5%'}}></div>
+                             </div>
+                             <div className="flex justify-between text-xs mt-1">
+                                 <span>Obstacles</span>
+                                 <span className="font-bold text-orange-500">1 Detected</span>
+                             </div>
+                         </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 3. CFD Engine View (Rich) ---
+        const CfdView = () => {
+            const heatmapData = Array.from({length: 8}, (_, r) => 
+                Array.from({length: 6}, (_, c) => ({
+                    row: r, col: c, temp: 22 + Math.random() * 15 
+                }))
+            );
+
+            return (
+                <div className="space-y-4 animate-in fade-in duration-500 pb-20">
+                    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-sm font-bold text-[#003D7C] flex items-center gap-2">
+                                <Icon name="Wind" className="text-[#EF7C00]" size={16}/> Thermal Map
+                            </h3>
+                            <div className="flex gap-2 text-[9px]">
+                                <span className="flex items-center gap-1"><div className="w-2 h-2 bg-blue-200"></div> &lt;25°</span>
+                                <span className="flex items-center gap-1"><div className="w-2 h-2 bg-red-400"></div> &gt;35°</span>
+                            </div>
+                        </div>
+                        
+                        {/* CSS Grid Heatmap */}
+                        <div className="grid grid-cols-6 gap-1 h-40">
+                            {heatmapData.flat().map((cell, i) => {
+                                let bg = 'bg-blue-100';
+                                if (cell.temp > 25) bg = 'bg-blue-300';
+                                if (cell.temp > 30) bg = 'bg-orange-300';
+                                if (cell.temp > 35) bg = 'bg-red-500';
+                                return (
+                                    <div key={i} className={`${bg} rounded flex items-center justify-center text-[8px] text-white/90 font-mono`}>
+                                        {Math.floor(cell.temp)}
+                                    </div>
+                                )
+                            })}
+                        </div>
+                        <p className="text-[10px] text-gray-500 mt-2 text-center">Rack A-Row Elevation (°C)</p>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                        <h3 className="text-sm font-bold text-[#003D7C] mb-2">Sim Parameters</h3>
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                             <div className="p-2 bg-gray-50 rounded border border-gray-100">
+                                 <span className="block text-gray-500 text-[10px]">Inlet Vel</span>
+                                 <span className="font-bold">2.4 m/s</span>
+                             </div>
+                             <div className="p-2 bg-gray-50 rounded border border-gray-100">
+                                 <span className="block text-gray-500 text-[10px]">Pressure</span>
+                                 <span className="font-bold">45 Pa</span>
+                             </div>
+                             <div className="p-2 bg-gray-50 rounded border border-gray-100">
+                                 <span className="block text-gray-500 text-[10px]">Turbulence</span>
+                                 <span className="font-bold">k-ε Model</span>
+                             </div>
+                             <div className="p-2 bg-blue-50 text-blue-700 rounded border border-blue-100 flex items-center justify-center font-bold">
+                                 Running...
+                             </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 4. AI Control View (Rich) ---
+        const AiView = () => {
+            const pueData = [
+                { time: 'T-60', baseline: 1.4, optimized: 1.18 },
+                { time: 'T-45', baseline: 1.42, optimized: 1.17 },
+                { time: 'T-30', baseline: 1.39, optimized: 1.15 },
+                { time: 'T-15', baseline: 1.45, optimized: 1.16 },
+                { time: 'Now', baseline: 1.41, optimized: 1.14 },
+            ];
+
+            return (
+                <div className="space-y-4 animate-in fade-in duration-500 pb-20">
+                    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                        <h3 className="text-sm font-bold text-[#003D7C] mb-2 flex items-center gap-2">
+                            <Icon name="Cpu" className="text-[#EF7C00]" size={16}/> AI Optimization Impact
+                        </h3>
+                        <div className="h-48 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={pueData}>
+                                    <defs>
+                                        <linearGradient id="colorBase" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#9ca3af" stopOpacity={0.1}/>
+                                            <stop offset="95%" stopColor="#9ca3af" stopOpacity={0}/>
+                                        </linearGradient>
+                                        <linearGradient id="colorOpt" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#003D7C" stopOpacity={0.3}/>
+                                            <stop offset="95%" stopColor="#003D7C" stopOpacity={0}/>
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis dataKey="time" tick={{fontSize: 9}} stroke="#9ca3af" />
+                                    <YAxis domain={[1, 1.6]} tick={{fontSize: 9}} stroke="#9ca3af" width={25} />
+                                    <RechartsTooltip contentStyle={{borderRadius: '8px', fontSize: '10px'}} />
+                                    <Legend wrapperStyle={{fontSize: '10px'}} />
+                                    <Area type="monotone" dataKey="baseline" name="Baseline" stroke="#9ca3af" fill="url(#colorBase)" strokeDasharray="3 3" />
+                                    <Area type="monotone" dataKey="optimized" name="AI Control" stroke="#003D7C" fill="url(#colorOpt)" strokeWidth={2} />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                        <div className="flex items-center justify-between bg-green-50 p-2 rounded mt-2 border border-green-100">
+                            <span className="text-xs text-gray-600">Total Energy Savings</span>
+                            <span className="text-sm font-bold text-green-700">-18.4%</span>
+                        </div>
+                    </div>
+
+                    <div className="bg-black text-gray-200 p-4 rounded-lg shadow-lg font-mono text-[10px] h-48 overflow-y-auto">
+                        <div className="mb-2 text-[#EF7C00] sticky top-0 bg-black">root@stdczt-core:~# tail -f decision_log</div>
+                        <div className="space-y-1">
+                            <p><span className="text-gray-500">[{getTimeLabel(5)}]</span> <span className="text-purple-400">[MODEL]</span> Pred: Hotspot 85%.</p>
+                            <p><span className="text-gray-500">[{getTimeLabel(2)}]</span> <span className="text-green-400">[ACT]</span> Fan PWM -> 65%.</p>
+                            <p><span className="text-gray-500">[{getTimeLabel(1)}]</span> <span className="text-green-400">[ACT]</span> Valve V-04 -> 80%.</p>
+                            <p><span className="text-gray-500">[{getTimeLabel(0)}]</span> <span className="text-blue-400">[INFO]</span> New PUE: 1.14</p>
+                            <p className="animate-pulse">_</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Other Views (Liquid Cooling & Energy - Preserved) ---
         const CoolingView = () => (
-            <div className="space-y-6 animate-in fade-in duration-500">
-                <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                    <h3 className="text-lg font-bold text-[#003D7C] mb-4 flex items-center gap-2">
-                        <Icon name="Droplets" className="text-[#EF7C00]" /> Rack Thermal Status (Liquid Loop)
+            <div className="space-y-4 animate-in fade-in duration-500">
+                <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <h3 className="text-md font-bold text-[#003D7C] mb-3 flex items-center gap-2">
+                        <Icon name="Droplets" className="text-[#EF7C00]" /> Rack Thermal Status
                     </h3>
                     <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
+                        <table className="w-full text-xs text-left whitespace-nowrap">
+                            <thead className="bg-gray-50 text-gray-500 uppercase text-[10px]">
                                 <tr>
-                                    <th className="px-4 py-3">Rack ID</th>
-                                    <th className="px-4 py-3">Inlet Temp (°C)</th>
-                                    <th className="px-4 py-3">Outlet Temp (°C)</th>
-                                    <th className="px-4 py-3">Flow Rate (L/min)</th>
-                                    <th className="px-4 py-3">Pressure (Bar)</th>
-                                    <th className="px-4 py-3">Status</th>
+                                    <th className="px-3 py-2">Rack</th>
+                                    <th className="px-3 py-2">Inlet</th>
+                                    <th className="px-3 py-2">Outlet</th>
+                                    <th className="px-3 py-2">Status</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {[1, 2, 3, 4, 5].map(id => (
                                     <tr key={id} className="hover:bg-gray-50">
-                                        <td className="px-4 py-3 font-medium">RACK-A0{id}</td>
-                                        <td className="px-4 py-3 text-blue-600">24.{Math.floor(Math.random()*9)}</td>
-                                        <td className="px-4 py-3 text-orange-600">38.{Math.floor(Math.random()*9)}</td>
-                                        <td className="px-4 py-3">12.5</td>
-                                        <td className="px-4 py-3">1.2</td>
-                                        <td className="px-4 py-3">
-                                            <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">Normal</span>
-                                        </td>
+                                        <td className="px-3 py-2 font-medium">A0{id}</td>
+                                        <td className="px-3 py-2 text-blue-600">24.{Math.floor(Math.random()*9)}°</td>
+                                        <td className="px-3 py-2 text-orange-600">38.{Math.floor(Math.random()*9)}°</td>
+                                        <td className="px-3 py-2"><span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px]">OK</span></td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -125,465 +373,202 @@
             </div>
         );
 
-        // 2. Coating Monitor Detail View
-        const CoatingView = () => (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-500">
-                <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                    <h3 className="text-lg font-bold text-[#003D7C] mb-4">Material Scanning Log</h3>
-                    <ul className="space-y-3">
-                        {[1, 2, 3].map(i => (
-                            <li key={i} className="flex items-start gap-3 p-3 bg-gray-50 rounded border border-gray-100">
-                                <div className="p-2 bg-white border border-gray-200 rounded text-gray-400">
-                                    <Icon name="Search" size={16} />
-                                </div>
-                                <div>
-                                    <div className="text-sm font-bold text-gray-700">Scan Sector #{100+i}</div>
-                                    <div className="text-xs text-gray-500">Timestamp: {getTimeLabel(i*120)}</div>
-                                    <div className="text-xs text-green-600 mt-1">No Micro-cracks detected. Hydrophobicity: 98%.</div>
-                                </div>
-                            </li>
+        const EnergyView = ({ sstData, flywheelData, gridData }) => (
+            <div className="space-y-4 animate-in fade-in duration-500 pb-20">
+                <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-sm font-bold text-[#003D7C] flex items-center gap-2"><Icon name="Zap" size={16} className="text-[#EF7C00]"/> SST Phase</h3>
+                        <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold">GRID-FORMING</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mb-2 text-center">
+                        {['A', 'B', 'C'].map(p => (
+                            <div key={p} className="bg-gray-50 rounded p-1 border border-gray-100">
+                                <div className="text-[9px] text-gray-400 font-bold">{p}</div>
+                                <div className="text-xs font-bold text-[#003D7C]">230V</div>
+                            </div>
                         ))}
-                         <li className="flex items-start gap-3 p-3 bg-red-50 rounded border border-red-100">
-                            <div className="p-2 bg-white border border-red-200 rounded text-red-500">
-                                <Icon name="AlertTriangle" size={16} />
-                            </div>
-                            <div>
-                                <div className="text-sm font-bold text-red-700">Scan Sector #099</div>
-                                <div className="text-xs text-red-500">Timestamp: {getTimeLabel(600)}</div>
-                                <div className="text-xs text-red-600 mt-1">Biofouling detected (Aspergillus). Initiating UV pulse.</div>
-                            </div>
-                        </li>
-                    </ul>
-                </div>
-                <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 flex flex-col items-center justify-center">
-                    <div className="w-48 h-48 rounded-full border-8 border-gray-100 border-t-[#EF7C00] flex flex-col items-center justify-center relative">
-                        <span className="text-3xl font-bold text-[#003D7C]">94%</span>
-                        <span className="text-xs text-gray-500 uppercase mt-1">Health Index</span>
-                    </div>
-                    <p className="mt-4 text-sm text-gray-600 text-center">Predicted Maintenance: <br/><strong>142 Days</strong></p>
-                </div>
-            </div>
-        );
-
-        // 3. SLAM Detail View
-        const SlamView = () => (
-             <div className="bg-gray-900 p-6 rounded-lg shadow-sm border border-gray-800 h-[500px] flex flex-col font-mono text-xs">
-                <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-2">
-                    <h3 className="text-green-400 font-bold flex items-center gap-2"><Icon name="Box" /> LIDAR Point Cloud Stream</h3>
-                    <span className="text-gray-500 animate-pulse">● LIVE</span>
-                </div>
-                <div className="flex-1 overflow-hidden relative">
-                    {/* Mock Grid Map */}
-                    <div className="absolute inset-0 grid grid-cols-12 grid-rows-8 opacity-20">
-                        {[...Array(96)].map((_,i) => <div key={i} className="border border-green-500/30"></div>)}
-                    </div>
-                    <div className="absolute top-1/4 left-1/4 w-4 h-4 bg-blue-500 rounded-full animate-ping"></div>
-                    <div className="absolute top-1/4 left-1/4 w-4 h-4 bg-blue-500 rounded-full"></div>
-                    
-                    {/* Log Overlay */}
-                    <div className="absolute bottom-0 left-0 p-4 w-full bg-gradient-to-t from-gray-900 to-transparent">
-                        <p className="text-green-300">>> [SLAM] Keyframe added id=4592 pos=(12.4, 4.2, 0.0)</p>
-                        <p className="text-gray-400">>> [IMU] Bias update: acc=[-0.01, 0.02, 0.09]</p>
-                        <p className="text-green-300">>> [LOOP] Loop closure detected with Frame #4200 (Score: 0.98)</p>
-                        <p className="text-gray-400">>> [GEO] Blanking panel verification: MISSING at Rack U24</p>
                     </div>
                 </div>
-             </div>
-        );
-
-        // 4. CFD View
-        const CfdView = () => (
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                <h3 className="text-lg font-bold text-[#003D7C] mb-6 flex items-center gap-2">
-                    <Icon name="Wind" className="text-[#EF7C00]" /> Simulation Parameters (Digital Twin)
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="p-4 bg-gray-50 rounded border border-gray-100">
-                        <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Boundary Conditions</label>
-                        <div className="space-y-2">
-                            <div className="flex justify-between text-sm"><span className="text-gray-600">Inlet Velocity:</span> <b>2.4 m/s</b></div>
-                            <div className="flex justify-between text-sm"><span className="text-gray-600">Inlet Temp:</span> <b>24.0 °C</b></div>
-                            <div className="flex justify-between text-sm"><span className="text-gray-600">Pressure Drop:</span> <b>45 Pa</b></div>
-                        </div>
-                    </div>
-                    <div className="p-4 bg-gray-50 rounded border border-gray-100">
-                        <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Mesh Statistics</label>
-                        <div className="space-y-2">
-                            <div className="flex justify-between text-sm"><span className="text-gray-600">Cell Count:</span> <b>12.4 M</b></div>
-                            <div className="flex justify-between text-sm"><span className="text-gray-600">Skewness:</span> <b>0.45 (Good)</b></div>
-                            <div className="flex justify-between text-sm"><span className="text-gray-600">Convergence:</span> <b>1e-4</b></div>
-                        </div>
-                    </div>
-                    <div className="p-4 bg-blue-50 rounded border border-blue-100 flex flex-col justify-center items-center">
-                        <button className="bg-[#003D7C] text-white px-4 py-2 rounded text-sm font-bold hover:bg-blue-800 transition-colors w-full mb-2">
-                            Update Model
-                        </button>
-                        <span className="text-xs text-gray-500">Last Sync: 2 mins ago</span>
+                <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <h3 className="text-sm font-bold text-[#003D7C] mb-2 flex items-center gap-2"><Icon name="Disc" size={16} className="text-[#EF7C00]"/> Flywheel Power</h3>
+                    <div className="h-40 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={flywheelData}>
+                                <defs>
+                                    <linearGradient id="colorPower" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#EF7C00" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#EF7C00" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="time" tick={{fontSize: 9}} stroke="#9ca3af" />
+                                <YAxis tick={{fontSize: 9}} stroke="#9ca3af" width={25} />
+                                <Area type="monotone" dataKey="power" stroke="#EF7C00" fill="url(#colorPower)" strokeWidth={2} />
+                            </AreaChart>
+                        </ResponsiveContainer>
                     </div>
                 </div>
             </div>
         );
 
-        // 5. AI Control View
-        const AiView = () => (
-             <div className="bg-black text-gray-200 p-6 rounded-lg shadow-lg font-mono text-xs h-[500px] overflow-y-auto">
-                <div className="mb-4 text-[#EF7C00]">root@stdczt-core:~/ai-control# tail -f decision_log.txt</div>
-                <div className="space-y-1">
-                    <p><span className="text-gray-500">[{getTimeLabel(10)}]</span> <span className="text-blue-400">[INFO]</span> Gathering telemetry from MQTT broker...</p>
-                    <p><span className="text-gray-500">[{getTimeLabel(8)}]</span> <span className="text-blue-400">[INFO]</span> Rack A-04 temp delta &gt; 12C. Analyzing...</p>
-                    <p><span className="text-gray-500">[{getTimeLabel(5)}]</span> <span className="text-purple-400">[MODEL]</span> Prediction: Potential localized hotspot in 5 mins.</p>
-                    <p><span className="text-gray-500">[{getTimeLabel(2)}]</span> <span className="text-green-400">[ACTION]</span> Increasing Fan Speed PWM to 65% for Zone A.</p>
-                    <p><span className="text-gray-500">[{getTimeLabel(1)}]</span> <span className="text-green-400">[ACTION]</span> Adjusting Liquid Flow Valve V-04 to 80%.</p>
-                    <p><span className="text-gray-500">[{getTimeLabel(0)}]</span> <span className="text-blue-400">[INFO]</span> Optimizing PUE... Current target: 1.15</p>
-                    <p className="animate-pulse">_</p>
-                </div>
-             </div>
-        );
-
-        // --- Main App Component ---
-
+        // --- Main App ---
         function App() {
             const [activeTab, setActiveTab] = useState('overview');
-            const [isSidebarOpen, setSidebarOpen] = useState(true);
+            const [isSidebarOpen, setSidebarOpen] = useState(false);
+            const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
             
-            // Mock Data
+            // Shared Data
             const [coolingData, setCoolingData] = useState([]);
-            const [sstData, setSstData] = useState([]);
+            const [sstData, setSstData] = useState([]);      
+            const [flywheelData, setFlywheelData] = useState([]); 
+            const [gridData, setGridData] = useState([]);    
             const [currentTime, setCurrentTime] = useState(new Date());
-            const [flywheelRPM, setFlywheelRPM] = useState(45000);
 
-            // Generators
-            const generateCoolingData = () => {
-                const data = [];
-                for (let i = 0; i < 20; i++) {
-                    data.push({
-                        time: getTimeLabel(20 - i),
-                        voidFraction: 0.3 + Math.random() * 0.2,
-                        burnoutProb: Math.random() * 0.15,
-                        limit: 0.8
-                    });
-                }
-                return data;
-            };
-
-            const generateSSTData = () => {
-                const data = [];
-                for (let i = 0; i < 15; i++) {
-                    data.push({
-                        time: i,
-                        thd: 1.5 + Math.random() * 0.5,
-                        voltage: 230 + (Math.random() * 2 - 1)
-                    });
-                }
-                return data;
-            };
-
-            // Init Data
             useEffect(() => {
-                setCoolingData(generateCoolingData());
-                setSstData(generateSSTData());
-            }, []);
+                const handleResize = () => setIsMobile(window.innerWidth <= 768);
+                window.addEventListener('resize', handleResize);
+                
+                // Init data
+                const initData = Array.from({length:15}, (_, i) => ({
+                    time: getTimeLabel(15-i), 
+                    voidFraction: Math.random(), 
+                    burnoutProb: Math.random(), 
+                    limit: 0.8,
+                    thd: 1.5+Math.random(),
+                    power: (Math.random()*20 - 5),
+                    freq: 49.95 + Math.random()*0.1
+                }));
+                setCoolingData(initData); setSstData(initData); setFlywheelData(initData); setGridData(initData);
 
-            // Simulation Loop
-            useEffect(() => {
                 const interval = setInterval(() => {
-                    setCoolingData(prev => {
-                        if(prev.length === 0) return prev;
-                        const newData = [...prev.slice(1), {
-                            time: getTimeLabel(0),
-                            voidFraction: 0.3 + Math.random() * 0.25,
-                            burnoutProb: Math.random() * 0.2,
-                            limit: 0.8
-                        }];
-                        return newData;
-                    });
-
-                    setSstData(prev => {
-                         if(prev.length === 0) return prev;
-                         const newData = [...prev.slice(1), {
-                             time: prev[prev.length-1].time + 1,
-                             thd: 1.5 + Math.random() * 0.8,
-                             voltage: 230 + (Math.random() * 1.5 - 0.75)
-                         }];
-                         return newData;
-                    });
-
-                    setFlywheelRPM(45000 + Math.floor(Math.random() * 50 - 25));
+                    const t = getTimeLabel(0);
+                    const newData = {
+                        time: t,
+                        voidFraction: 0.3 + Math.random() * 0.25,
+                        burnoutProb: Math.random() * 0.2,
+                        limit: 0.8,
+                        thd: 1.5 + Math.random() * 0.8,
+                        power: Math.random()*20 - 5,
+                        freq: 49.95 + Math.random()*0.1
+                    };
+                    
+                    setCoolingData(prev => [...prev.slice(1), newData]);
+                    setSstData(prev => [...prev.slice(1), newData]);
+                    setFlywheelData(prev => [...prev.slice(1), {time:t, power: prev[prev.length-1].power * 0.9 + (Math.random()*4 - 2)}]);
+                    setGridData(prev => [...prev.slice(1), newData]);
                     setCurrentTime(new Date());
                 }, 1000);
-                return () => clearInterval(interval);
+                
+                return () => { window.removeEventListener('resize', handleResize); clearInterval(interval); };
             }, []);
 
-            // Shared Components
-            const SystemStatusBadge = ({ status }) => {
-                const colors = {
-                    active: "bg-green-100 text-green-700 border-green-200",
-                    warning: "bg-orange-100 text-[#EF7C00] border-orange-200",
-                    critical: "bg-red-100 text-red-700 border-red-200",
-                    offline: "bg-gray-100 text-gray-500 border-gray-200",
-                    charging: "bg-blue-100 text-blue-700 border-blue-200"
-                };
-                return (
-                    <span className={`px-2 py-0.5 rounded text-xs font-semibold border ${colors[status] || colors.offline} uppercase tracking-wide`}>
-                        {status}
-                    </span>
-                );
-            };
-
-            const StatCard = ({ title, value, unit, trend, icon, status = "neutral" }) => (
-                <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-                    <div className="flex justify-between items-start mb-2">
-                        <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider">{title}</h3>
-                        <Icon name={icon} size={16} className={status === "critical" ? "text-red-500" : "text-gray-400"} />
-                    </div>
-                    <div className="flex items-end gap-2">
-                        <span className="text-2xl font-bold text-[#003D7C]">{value}</span>
-                        <span className="text-xs text-gray-500 mb-1">{unit}</span>
-                    </div>
-                    {trend && (
-                        <div className={`text-xs mt-2 flex items-center ${trend.includes('+') ? 'text-red-500' : 'text-green-500'}`}>
-                            {trend.includes('+') ? '▲' : '▼'} {trend} vs baseline
-                        </div>
-                    )}
-                </div>
-            );
-
             const SidebarItem = ({ id, icon, label, alert }) => (
-                <button 
-                    onClick={() => setActiveTab(id)}
+                <button onClick={() => { setActiveTab(id); if(isMobile) setSidebarOpen(false); }}
                     className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors border-r-4
-                        ${activeTab === id 
-                            ? `bg-blue-50 text-[#003D7C] border-[#EF7C00]` 
-                            : 'text-gray-500 border-transparent hover:bg-gray-50 hover:text-gray-700'}
-                    `}
-                >
-                    <Icon name={icon} size={18} />
-                    {isSidebarOpen && <span>{label}</span>}
-                    {isSidebarOpen && alert && <div className="ml-auto w-2 h-2 bg-[#EF7C00] rounded-full animate-pulse" />}
+                        ${activeTab === id ? `bg-blue-50 text-[#003D7C] border-[#EF7C00]` : 'text-gray-500 border-transparent hover:bg-gray-50'}
+                    `}>
+                    <Icon name={icon} size={18} /><span>{label}</span>
+                    {alert && <div className="ml-auto w-2 h-2 bg-[#EF7C00] rounded-full animate-pulse" />}
                 </button>
             );
 
-            // Overview Dashboard Content
             const OverviewDashboard = () => (
-                <div className="space-y-6 animate-in fade-in duration-500">
-                    {/* KPI Row */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <StatCard title="Real-time PUE" value="1.18" unit="" trend="-0.02" icon="Zap" />
-                        <StatCard title="Load Density" value="48.2" unit="kW/Rack" trend="+1.2%" icon="Thermometer" />
-                        <StatCard title="CV Latency" value="18" unit="ms" trend="-2ms" icon="Activity" />
-                        <StatCard title="Energy Resilience" value="100" unit="%" icon="BatteryCharging" status="good" />
+                <div className="space-y-4 animate-in fade-in duration-500 pb-20">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                             <div className="text-[10px] text-gray-500 font-bold">PUE</div>
+                             <div className="text-xl font-bold text-[#003D7C]">1.18</div>
+                         </div>
+                         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                             <div className="text-[10px] text-gray-500 font-bold">Load</div>
+                             <div className="text-xl font-bold text-[#003D7C]">48 kW</div>
+                         </div>
                     </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Main Visualization */}
-                        <div className="lg:col-span-2 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                            <div className="flex justify-between items-center mb-6">
-                                <div>
-                                    <h2 className="text-lg font-bold text-[#003D7C] flex items-center gap-2">
-                                        <Icon name="Droplets" className="text-[#EF7C00]"/> 
-                                        Liquid Cooling Safety Barrier
-                                    </h2>
-                                    <p className="text-xs text-gray-500 mt-1">Real-time Boiling Regime & Burnout Probability (CHF)</p>
-                                </div>
-                                <SystemStatusBadge status="active" />
-                            </div>
-                            
-                            <div className="h-64 w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <AreaChart data={coolingData}>
-                                        <defs>
-                                            <linearGradient id="colorVoid" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#003D7C" stopOpacity={0.1}/>
-                                                <stop offset="95%" stopColor="#003D7C" stopOpacity={0}/>
-                                            </linearGradient>
-                                            <linearGradient id="colorBurn" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#EF7C00" stopOpacity={0.1}/>
-                                                <stop offset="95%" stopColor="#EF7C00" stopOpacity={0}/>
-                                            </linearGradient>
-                                        </defs>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                        <XAxis dataKey="time" tick={{fontSize: 10}} stroke="#9ca3af" />
-                                        <YAxis tick={{fontSize: 10}} stroke="#9ca3af" />
-                                        <RechartsTooltip contentStyle={{border: 'none', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
-                                        <Area type="monotone" dataKey="voidFraction" name="Void Fraction" stroke="#003D7C" fillOpacity={1} fill="url(#colorVoid)" strokeWidth={2} />
-                                        <Area type="monotone" dataKey="burnoutProb" name="Burnout Prob" stroke="#EF7C00" fillOpacity={1} fill="url(#colorBurn)" strokeWidth={2} />
-                                        <Line type="monotone" dataKey="limit" name="Limit" stroke="#FF0000" strokeDasharray="5 5" strokeWidth={1} dot={false} />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-
-                        {/* Integration Status */}
-                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-0 overflow-hidden flex flex-col">
-                            <div className="p-4 border-b border-gray-100 bg-gray-50">
-                                <h2 className="text-sm font-bold text-[#003D7C] uppercase tracking-wide">Cognitive Digital Twin API</h2>
-                            </div>
-                            <div className="flex-1 p-4 space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-blue-50 rounded text-[#003D7C]"><Icon name="Wind" size={16}/></div>
-                                        <div><div className="text-sm font-semibold">CFD Engine</div><div className="text-[10px] text-gray-500">Geometry Sync</div></div>
-                                    </div>
-                                    <div className="text-xs font-bold text-green-600 flex items-center gap-1"><Icon name="CheckCircle" size={10}/> Synced</div>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-orange-50 text-[#EF7C00]"><Icon name="Cpu" size={16}/></div>
-                                        <div><div className="text-sm font-semibold">AI Control Engine</div><div className="text-[10px] text-gray-500">Telemetry (MQTT)</div></div>
-                                    </div>
-                                    <div className="text-xs font-bold text-green-600 flex items-center gap-1"><Icon name="Activity" size={10}/> Active</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                     {/* SST & Flywheel Panel */}
-                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                       {/* SST */}
-                       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 relative overflow-hidden">
-                         <div className="absolute top-0 right-0 p-4 opacity-10"><Icon name="Zap" size={120} /></div>
-                         <div className="flex justify-between items-center mb-4 relative z-10">
-                           <h2 className="text-md font-bold text-[#003D7C] flex items-center gap-2"><Icon name="Zap" size={18} className="text-[#EF7C00]"/> HHE Solid State Transformer (SST)</h2>
-                           <SystemStatusBadge status="active" />
+                    <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                         <div className="flex justify-between items-center mb-2">
+                             <h2 className="text-sm font-bold text-[#003D7C] flex items-center gap-2">
+                                 <Icon name="Droplets" className="text-[#EF7C00]" size={16}/> Liquid Cooling
+                             </h2>
+                             <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold">ACTIVE</span>
                          </div>
-                         <div className="grid grid-cols-2 gap-4 relative z-10">
-                            <div className="space-y-4">
-                              <div className="p-3 bg-gray-50 rounded border border-gray-100">
-                                 <div className="text-xs text-gray-500 mb-1">Grid Stability (THD)</div>
-                                 <div className="flex items-end gap-2">
-                                   <span className="text-2xl font-bold text-[#003D7C]">{sstData[sstData.length-1]?.thd.toFixed(2)}%</span>
-                                   <span className="text-[10px] text-green-600 mb-1">Excellent (&lt;5%)</span>
-                                 </div>
-                                 <div className="h-10 mt-2">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                       <LineChart data={sstData}>
-                                          <Line type="monotone" dataKey="thd" stroke="#EF7C00" strokeWidth={2} dot={false} />
-                                       </LineChart>
-                                    </ResponsiveContainer>
-                                 </div>
-                              </div>
-                            </div>
-                            <div className="p-3 bg-blue-50 rounded border border-blue-100">
-                               <div className="flex justify-between items-start mb-2"><div className="text-xs font-bold text-[#003D7C] uppercase">CV Load Verification</div><Icon name="Eye" size={14} className="text-[#EF7C00]" /></div>
-                               <div className="space-y-2">
-                                  <div className="flex justify-between text-xs"><span className="text-gray-600">Active LED Count:</span><span className="font-mono font-bold">48 Units</span></div>
-                                  <div className="flex justify-between text-xs border-t border-blue-200 pt-1 mt-1"><span className="text-gray-600">Est. Power Draw:</span><span className="font-mono font-bold text-[#EF7C00]">12.4 kW</span></div>
-                               </div>
-                            </div>
+                         <div className="h-48 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={coolingData}>
+                                    <defs>
+                                        <linearGradient id="colorVoid" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#003D7C" stopOpacity={0.1}/>
+                                            <stop offset="95%" stopColor="#003D7C" stopOpacity={0}/>
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis dataKey="time" tick={{fontSize: 9}} stroke="#9ca3af" />
+                                    <YAxis tick={{fontSize: 9}} stroke="#9ca3af" width={25} />
+                                    <Area type="monotone" dataKey="voidFraction" stroke="#003D7C" fill="url(#colorVoid)" strokeWidth={2} />
+                                    <Line type="monotone" dataKey="limit" stroke="#FF0000" strokeDasharray="5 5" dot={false} />
+                                </AreaChart>
+                            </ResponsiveContainer>
                          </div>
-                       </div>
-
-                       {/* Flywheel */}
-                       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 relative overflow-hidden">
-                         <div className="absolute -right-6 -bottom-6 opacity-5"><Icon name="Disc" size={200} className="animate-spin-slow" /></div>
-                         <div className="flex justify-between items-center mb-4 relative z-10">
-                           <h2 className="text-md font-bold text-[#003D7C] flex items-center gap-2"><Icon name="Disc" size={18} className="text-[#EF7C00] animate-spin-slow"/> Kinetic Energy Storage</h2>
-                           <SystemStatusBadge status="charging" />
-                         </div>
-                         <div className="flex items-center gap-8 relative z-10">
-                            <div className="relative w-32 h-32 flex items-center justify-center">
-                               <svg className="w-full h-full transform -rotate-90">
-                                  <circle cx="64" cy="64" r="56" stroke="#f3f4f6" strokeWidth="8" fill="none" />
-                                  <circle cx="64" cy="64" r="56" stroke="#EF7C00" strokeWidth="8" fill="none" strokeDasharray="351" strokeDashoffset={351 - (351 * (flywheelRPM/50000))} className="transition-all duration-500 ease-out" />
-                               </svg>
-                               <div className="absolute flex flex-col items-center">
-                                  <span className="text-lg font-bold text-[#003D7C]">{flywheelRPM.toLocaleString()}</span>
-                                  <span className="text-[10px] text-gray-500 uppercase">RPM</span>
-                               </div>
-                            </div>
-                            <div className="flex-1 space-y-4">
-                               <div className="grid grid-cols-2 gap-4">
-                                  <div><div className="text-xs text-gray-500 mb-1">Energy Stored</div><div className="text-xl font-bold text-[#003D7C]">15.5 <span className="text-xs text-gray-400 font-normal">kWh</span></div></div>
-                                  <div><div className="text-xs text-gray-500 mb-1">Est. Autonomy</div><div className="text-xl font-bold text-[#003D7C]">45 <span className="text-xs text-gray-400 font-normal">sec</span></div></div>
-                               </div>
-                            </div>
-                         </div>
-                       </div>
                     </div>
                 </div>
             );
 
-            // --- Main Layout ---
             return (
                 <div className="flex h-screen bg-[#F5F6F8] font-sans text-gray-800">
+                    {/* Mobile Backdrop */}
+                    {isMobile && isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarOpen(false)} />}
+                    
                     {/* Sidebar */}
-                    <aside className={`bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
-                        <div className="h-16 flex items-center justify-center border-b border-gray-100">
+                    <aside className={`fixed md:static inset-y-0 left-0 z-50 bg-white border-r border-gray-200 flex flex-col transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} w-64 md:w-20 md:hover:w-64 h-full shadow-lg md:shadow-none group`}>
+                        <div className="h-14 flex items-center justify-center border-b border-gray-100 px-4">
                             <div className="flex items-center gap-2 text-[#003D7C]">
-                                <div className="w-8 h-8 bg-[#EF7C00] rounded flex items-center justify-center text-white font-bold text-lg">N</div>
-                                {isSidebarOpen && <span className="font-bold text-xl tracking-tight">STDCZt 2.0</span>}
+                                <div className="w-8 h-8 min-w-[2rem] bg-[#EF7C00] rounded flex items-center justify-center text-white font-bold text-lg">N</div>
+                                <span className="font-bold text-xl md:hidden md:group-hover:block whitespace-nowrap">STDCZt 2.0</span>
                             </div>
                         </div>
-
-                        <nav className="flex-1 py-6 space-y-1">
-                            <div className={`px-4 mb-4 text-xs font-semibold text-gray-400 uppercase tracking-wider ${!isSidebarOpen && 'hidden'}`}>Perception Layer</div>
+                        <nav className="flex-1 py-4 space-y-1 overflow-y-auto">
                             <SidebarItem id="overview" icon="Activity" label="System Overview" />
-                            <SidebarItem id="cooling" icon="Droplets" label="Liquid Cooling Safety" alert={true} />
-                            <SidebarItem id="coating" icon="Layers" label="DCHX Coating Monitor" />
-                            <SidebarItem id="slam" icon="Box" label="Visual SLAM & Geo" />
-                            
-                            <div className={`px-4 mt-8 mb-4 text-xs font-semibold text-gray-400 uppercase tracking-wider ${!isSidebarOpen && 'hidden'}`}>Energy & Twin</div>
-                            <SidebarItem id="energy" icon="Zap" label="SST & Flywheel" />
-                            <SidebarItem id="cfd" icon="Wind" label="NUS CFD Engine" />
-                            <SidebarItem id="ai" icon="Cpu" label="NUS AI Control" />
+                            <SidebarItem id="cooling" icon="Droplets" label="Liquid Cooling" alert={true} />
+                            <SidebarItem id="coating" icon="Layers" label="Coating Monitor" />
+                            <SidebarItem id="slam" icon="Box" label="Visual SLAM" />
+                            <div className="my-2 border-t border-gray-100"></div>
+                            <SidebarItem id="energy" icon="Zap" label="Energy (HHE)" />
+                            <SidebarItem id="cfd" icon="Wind" label="CFD Engine" />
+                            <SidebarItem id="ai" icon="Cpu" label="AI Control" />
                         </nav>
-                        
                         <div className="p-4 border-t border-gray-100">
-                            <div className="flex items-center gap-3 w-full">
-                                <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center font-bold text-xs text-gray-600">DC</div>
-                                {isSidebarOpen && (
-                                    <div className="text-left overflow-hidden">
-                                        <div className="text-xs font-bold text-gray-700 truncate">Admin User</div>
-                                        <div className="text-[10px] text-gray-500">Lead Integrator</div>
-                                    </div>
-                                )}
+                             <div className="flex items-center gap-3 w-full">
+                                <div className="w-8 h-8 min-w-[2rem] bg-gray-200 rounded-full flex items-center justify-center font-bold text-xs text-gray-600">DC</div>
+                                <div className="text-left overflow-hidden whitespace-nowrap md:hidden md:group-hover:block">
+                                    <div className="text-xs font-bold text-gray-700 truncate">Admin</div>
+                                </div>
                             </div>
                         </div>
                     </aside>
 
                     {/* Main Content */}
-                    <div className="flex-1 flex flex-col overflow-hidden">
-                        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm z-10">
-                            <div className="flex items-center gap-4">
-                                <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-gray-100 rounded text-gray-500"><Icon name="Menu" size={20} /></button>
-                                <div className="hidden md:block">
-                                    <h1 className="text-lg font-bold text-[#003D7C]">Tropical Data Center Zero-touch 2.0</h1>
-                                    <div className="flex gap-2 text-[10px] text-gray-500"><span>POC Phase 1</span><span>•</span><span>Site: Singapore (Wet Bulb 27°C)</span></div>
-                                </div>
+                    <div className="flex-1 flex flex-col overflow-hidden w-full">
+                        <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 shadow-sm z-30 shrink-0">
+                            <div className="flex items-center gap-3">
+                                <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 -ml-2 hover:bg-gray-100 rounded text-gray-500"><Icon name="Menu" size={20} /></button>
+                                <h1 className="text-sm font-bold text-[#003D7C] truncate">STDCZt 2.0</h1>
                             </div>
-                            <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full border border-gray-200">
-                                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                                    <span className="text-xs font-mono font-medium text-gray-600">{currentTime.toLocaleTimeString()}</span>
+                            <div className="flex items-center gap-2">
+                                <div className="bg-gray-100 px-2 py-1 rounded-full border border-gray-200 text-[10px] font-mono text-gray-600">
+                                    {currentTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                                 </div>
-                                <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"><Icon name="Bell" size={20} /></button>
-                                <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"><Icon name="Settings" size={20} /></button>
                             </div>
                         </header>
 
-                        <main className="flex-1 overflow-y-auto p-6 md:p-8">
+                        <main className="flex-1 overflow-y-auto p-4 scroll-smooth">
                             <div className="max-w-7xl mx-auto">
-                                {/* DYNAMIC CONTENT SWITCHING */}
                                 {activeTab === 'overview' && <OverviewDashboard />}
                                 {activeTab === 'cooling' && <CoolingView />}
                                 {activeTab === 'coating' && <CoatingView />}
                                 {activeTab === 'slam' && <SlamView />}
-                                {activeTab === 'energy' && (
-                                    <div className="text-center text-gray-500 mt-20">
-                                        <h3 className="text-xl font-bold mb-2">Detailed Energy Analysis</h3>
-                                        <p>See Overview Dashboard for real-time SST & Flywheel data.</p>
-                                    </div>
-                                )}
+                                {activeTab === 'energy' && <EnergyView sstData={sstData} flywheelData={flywheelData} gridData={gridData} />}
                                 {activeTab === 'cfd' && <CfdView />}
                                 {activeTab === 'ai' && <AiView />}
                             </div>
-                            
-                            <footer className="mt-8 pt-6 border-t border-gray-200 text-center text-xs text-gray-400 pb-4">
-                                <div className="flex justify-center gap-6 mb-2">
-                                    <span>Dcdeeptech</span><span>HHE (Energy)</span><span>Axiom Deta (Infra)</span><span>NUS (Digital Twin)</span>
-                                </div>
-                                <p>© 2025 STDCZt 2.0 Project. Confidential.</p>
-                            </footer>
                         </main>
                     </div>
                 </div>
@@ -592,16 +577,6 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
-    </script>
-    
-    <script>
-        // Activate lucide after react render if needed, but our component handles it.
-        // Keeping this for non-react elements if any.
-        window.addEventListener('load', function() {
-            if (window.lucide) {
-                window.lucide.createIcons();
-            }
-        });
     </script>
 </body>
 </html>
